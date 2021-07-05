@@ -9,7 +9,7 @@ filename = './Data/trips_motion_features_NotFixedLength_woOutliers.pickle'
 with open(filename, 'rb') as f:
     trip_motion_all_user_with_label, trip_motion_all_user_wo_label = pickle.load(f)
 
-# mini batch
+# 调试用
 # trip_motion_all_user_with_label = trip_motion_all_user_with_label[:1000]
 # trip_motion_all_user_wo_label = trip_motion_all_user_wo_label[:1000]
 
