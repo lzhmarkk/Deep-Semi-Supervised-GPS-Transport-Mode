@@ -23,6 +23,7 @@ filename = './Data/Trajectory_Label.pickle'
 with open(filename, 'rb') as f:
     trajectory_all_user_with_label, trajectory_all_user_wo_label = pickle.load(f)
 
+print("load trajectory file done, time:", time.perf_counter() - current)
 print(np.array(trajectory_all_user_with_label).shape, np.array(trajectory_all_user_wo_label).shape)
 
 # 调试用
@@ -97,6 +98,8 @@ trip_all_user_with_label = [labeled_gps_to_trip(trajectory, trip_time=20 * 60) f
                             trajectory_all_user_with_label]
 trip_all_user_wo_label = [unlabeled_gps_to_trip(trajectory, trip_time=20 * 60) for trajectory in
                           trajectory_all_user_wo_label]
+
+print("trip generation done, time:", time.perf_counter() - current)
 
 
 def compute_delta_time(p1, p2):
@@ -233,10 +236,16 @@ def compute_trip_motion_features(all_trip_one_user, data_type):
             if data_type == 'labeled':
                 mode = trip[0][3]
                 # Randomly check that all trip[i][3] have the same mode
-                assert trip[0][3] == trip[np.random.randint(1, len(trip) - 1, 1)[0]][3]
+                # assert trip[0][3] == trip[np.random.randint(1, len(trip) - 1, 1)[0]][3]
                 trip_motion_features = remove_error_labeled(trip_motion_features, mode)
                 all_trip_motion_features_one_user.append((trip_motion_features, mode))
             if data_type == 'unlabeled':
+                trip_motion_features = remove_error_unlabeled(trip_motion_features)
+                all_trip_motion_features_one_user.append(trip_motion_features)
+            if data_type == 'custom':
+                modes = [point[3] for point in trip]
+                modes = modes[:len(trip_motion_features[0])]
+                trip_motion_features.append(modes)
                 trip_motion_features = remove_error_unlabeled(trip_motion_features)
                 all_trip_motion_features_one_user.append(trip_motion_features)
 
@@ -251,13 +260,19 @@ trip_motion_all_user_with_label = [compute_trip_motion_features(user, data_type=
 trip_motion_all_user_wo_label = [compute_trip_motion_features(user, data_type='unlabeled') for user
                                  in trip_all_user_wo_label]
 
+print("motion computation done, time:", time.perf_counter() - current)
+
 # This pickling and unpickling is due to large computation time before this line.
 with open('./Data/trips_motion_features_temp.pickle', 'wb') as f:
     pickle.dump([trip_motion_all_user_with_label, trip_motion_all_user_wo_label], f)
 
+print("temp file save done, time:", time.perf_counter() - current)
+
 filename = './Data/trips_motion_features_temp.pickle'
 with open(filename, 'rb') as f:
     trip_motion_all_user_with_label, trip_motion_all_user_wo_label = pickle.load(f)
+
+print("temp file read done, time:", time.perf_counter() - current)
 
 
 def trip_check_thresholds(trip_motion_all_user, min_threshold, min_distance, min_time, data_type):
@@ -285,6 +300,7 @@ trip_motion_all_user_with_label = trip_check_thresholds(trip_motion_all_user_wit
 trip_motion_all_user_wo_label = trip_check_thresholds(trip_motion_all_user_wo_label, min_threshold=min_threshold,
                                                       min_distance=min_distance, min_time=min_time,
                                                       data_type='unlabeled')
+print("check threshold done, time:", time.perf_counter() - current)
 
 # Find the median size (M) as the fixed size of all GPS segments.
 trip_length_labeled = [len(trip[0][0]) for user in trip_motion_all_user_with_label for trip in user]
@@ -318,5 +334,7 @@ random.shuffle(trip_motion_all_user_wo_label)
 
 with open('./Data/trips_motion_features_NotFixedLength_woOutliers.pickle', 'wb') as f:
     pickle.dump([trip_motion_all_user_with_label, trip_motion_all_user_wo_label], f)
+
+print("save motion file done, time:", time.perf_counter() - current)
 
 print('Running time', time.perf_counter() - current)

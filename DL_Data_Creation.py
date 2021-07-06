@@ -104,13 +104,13 @@ def trip_to_fixed_length(trip_motion_all_user, min_threshold, max_threshold, min
 # Max_threshold=200: 200 is the rounded median size of all trips (i.e., GPS trajectory) after removing errors and
 # outliers including: 1) max speed and acceleration, (2) trip length less than 10
 
-# X_labeled结构：[trip][feature][value...]，其中value的长度被固定为max_length=200
+# X_labeled结构：[trip][feature][value...]，其中value的长度被固定为max_threshold=248
 # Y_labeled_ori结构：[trip]，值为常量mode
 X_labeled, Y_labeled_ori = trip_to_fixed_length(trip_motion_all_user_with_label, min_threshold=min_threshold,
                                                 max_threshold=max_threshold, min_distance=min_distance,
                                                 min_time=min_time,
                                                 data_type='labeled')
-# X_unlabeled结构：[trip][feature][value...]，其中value的长度被固定为max_length=200
+# X_unlabeled结构：[trip][feature][value...]，其中value的长度被固定为max_threshold=248
 X_unlabeled = trip_to_fixed_length(trip_motion_all_user_wo_label, min_threshold=min_threshold,
                                    max_threshold=max_threshold, min_distance=min_distance, min_time=min_time,
                                    data_type='unlabeled')
