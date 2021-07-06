@@ -6,6 +6,8 @@ import tensorflow.keras as keras
 # Import the final output from Instance_creation file, which is the filtered trips for all users.
 
 filename = './Data/trips_motion_features_NotFixedLength_woOutliers.pickle'
+# 结构：[trip][([feature][value...], mode)]
+# 结构：[trip][feature][value...]
 with open(filename, 'rb') as f:
     trip_motion_all_user_with_label, trip_motion_all_user_wo_label = pickle.load(f)
 
@@ -42,6 +44,7 @@ def trip_to_fixed_length(trip_motion_all_user, min_threshold, max_threshold, min
     """
     将trip处理成max_threshold长度
     """
+    # trip_motion_all_user结构：[trip][([feature][value...], mode)] or [trip][feature][value...]
     if data_type == 'labeled':
         total_input = []
         total_label = []
@@ -52,9 +55,11 @@ def trip_to_fixed_length(trip_motion_all_user, min_threshold, max_threshold, min
             if all([trip_length >= min_threshold, trip_length < max_threshold, np.sum(trip[0, :]) >= min_distance,
                     np.sum(trip[1, :]) >= min_time]):
                 trip_padded = np.pad(trip, ((0, 0), (0, max_threshold - trip_length)), 'constant')
+                # trip_padded结构[feature][value...]，shape固定为7*max_threshold
                 total_input.append(trip_padded)
                 total_label.append(mode)
             elif trip_length >= max_threshold:
+                # 将一个过长的trip切成多个长度为max_threshold的trip
                 quotient = trip_length // max_threshold
                 for i in range(quotient):
                     trip_truncated = trip[:, i * max_threshold:(i + 1) * max_threshold]
@@ -68,7 +73,8 @@ def trip_to_fixed_length(trip_motion_all_user, min_threshold, max_threshold, min
                                          'constant')
                     total_input.append(trip_padded)
                     total_label.append(mode)
-
+        # total_input结构：[trip][feature][value...]，其中value的长度被fixed为max_length
+        # total_label结构：[trip]，值为常量mode
         return np.array(total_input), np.array(total_label)
 
     elif data_type == 'unlabeled':
@@ -91,23 +97,33 @@ def trip_to_fixed_length(trip_motion_all_user, min_threshold, max_threshold, min
                     trip_padded = np.pad(remain_trip, ((0, 0), (0, max_threshold - trip_length % max_threshold)),
                                          'constant')
                     total_input.append(trip_padded)
+        # total_input结构：[trip][feature][value...]，其中value的长度被fixed为max_length
         return np.array(total_input)
 
 
 # Max_threshold=200: 200 is the rounded median size of all trips (i.e., GPS trajectory) after removing errors and
 # outliers including: 1) max speed and acceleration, (2) trip length less than 10
+
+# X_labeled结构：[trip][feature][value...]，其中value的长度被固定为max_length=200
+# Y_labeled_ori结构：[trip]，值为常量mode
 X_labeled, Y_labeled_ori = trip_to_fixed_length(trip_motion_all_user_with_label, min_threshold=min_threshold,
                                                 max_threshold=max_threshold, min_distance=min_distance,
                                                 min_time=min_time,
                                                 data_type='labeled')
+# X_unlabeled结构：[trip][feature][value...]，其中value的长度被固定为max_length=200
 X_unlabeled = trip_to_fixed_length(trip_motion_all_user_wo_label, min_threshold=min_threshold,
                                    max_threshold=max_threshold, min_distance=min_distance, min_time=min_time,
                                    data_type='unlabeled')
 
 
 def change_to_new_channel(input):
+    # input1结构：[trip][feature][value...]，其中feature为relative_distance, delta_time
     input1 = input[:, 0:1, :]
+    # input2结构：[trip][feature][value...]，其中feature为speed, acc, jerk, bearing_rate
     input2 = input[:, 3:6, :]
+    # input结构：[trip][feature][value...]
+    # 其中feature为relative_distance, delta_time, speed, acc, jerk, bearing_rate
+    # input.shape = (trip) * (6 features) * (max_threshold)
     input = np.concatenate((input1, input2), axis=1)
     total_input_new = np.zeros((len(input), 1, max_threshold, new_channel))
     for i in range(len(input)):
@@ -117,10 +133,12 @@ def change_to_new_channel(input):
         total_input_new[i, 0, :, 3] = input[i, 3, :]
         # total_input_new[i, 0, :, 4] = input[i, 4, :]
         # total_input_new[i, 0, :, 5] = input[i, 5, :]
-
+    # total_input_new结构：[trip][1][max_threshold][4 feature]
+    # 其中feature为relative_distance, delta_time, speed, acc
     return total_input_new
 
 
+# shape = (trip) * 1 * max_threshold * (4 features)
 X_labeled = change_to_new_channel(X_labeled)
 X_unlabeled = change_to_new_channel(X_unlabeled)
 
@@ -166,6 +184,9 @@ def k_fold_stratified(X_labeled, Y_labeled_ori, fold=5):
     return kfold_dataset
 
 
+# kfold_dataset.shape = (fold) * (type) * (value)
+# 其中type = [Train_X, Train_Y_ori, Test_X, Test_Y, Test_Y_ori]
+# value.shape = (trip) * 1 * max_threshold * (4 features) or (scale)
 kfold_dataset = k_fold_stratified(X_labeled, Y_labeled_ori, fold=5)
 
 X_unlabeled, _ = min_max_scaler(X_unlabeled, 0, 1)
@@ -175,5 +196,8 @@ a = len(np.where(kfold_dataset[4][1] == 0)[0]) / len(kfold_dataset[4][1])
 
 b = len(np.where(kfold_dataset[4][4] == 0)[0]) / len(kfold_dataset[4][4])
 
+# kfold_dataset.shape = (fold) * (type) * (trip) * 1 * 248 * (4 features)
+# 其中type = [Train_X, Train_Y_ori, Test_X, Test_Y, Test_Y_ori]
+# X_unlabeled.shape = (trip) * 1 * 248 * (4 features)
 with open('./Data/data_for_DL_kfold_dataset_RL.pickle', 'wb') as f:
     pickle.dump([kfold_dataset, X_unlabeled], f)

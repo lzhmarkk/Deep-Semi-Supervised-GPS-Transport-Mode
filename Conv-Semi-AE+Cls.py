@@ -41,6 +41,9 @@ initializer = tf.compat.v1.keras.initializers.VarianceScaling(scale=1.0, mode="f
 # Import the data
 # filename = './Data/data_for_DL_train_val_test.pickle'
 filename = './Data/data_for_DL_kfold_dataset_RL.pickle'
+# kfold_dataset.shape = (fold) * (type) * (trip) * 1 * 248 * (4 features)
+# 其中type = [Train_X, Train_Y_ori, Test_X, Test_Y, Test_Y_ori]
+# X_unlabeled.shape = (trip) * 1 * 248 * (4 features)
 with open(filename, 'rb') as f:
     kfold_dataset, X_unlabeled = pickle.load(f)
 
@@ -270,6 +273,7 @@ def train_val_split(Train_X, Train_Y_ori):
     return Train_X, Train_Y, Train_Y_ori, Val_X, Val_Y, Val_Y_ori
 
 
+"""
 def get_label_unlabeled_size(len_label, len_unlabel, prop):
     if prop == 0:
         return 0, len_unlabel
@@ -285,28 +289,33 @@ def get_label_unlabeled_size(len_label, len_unlabel, prop):
         label_size = prop * total_label_max
         unlabel_size = (1 - prop) * total_label_max
     return int(label_size), int(unlabel_size)
+"""
 
 
-def training(one_fold, X_unlabeled, seed, prop, num_filter_ae_cls_all, epochs_ae_cls=20):
+def training(one_fold, X_unlabeled, seed, prop, num_filter_ae_cls_all, epochs_ae_cls=epoch):
+    # Train_X.shape = (trip) * 1 * 248 * (4 features)
+    # Train_Y_ori.shape = (trip)
+    # X_unlabeled.shape = (trip) * 1 * 248 * (4 features)
     Train_X = one_fold[0]
     Train_Y_ori = one_fold[1]
-    labeled_size, unlabeled_size = get_label_unlabeled_size(len(Train_X), len(X_unlabeled), prop)
     random.seed(seed)
     np.random.seed(seed)
-    # random_sample = np.random.choice(len(Train_X), size=round(0.5*len(Train_X)), replace=False, p=None)
-    random_sample = np.random.choice(len(Train_X), size=labeled_size, replace=False, p=None)
+    random_sample = np.random.choice(len(Train_X), size=round(0.5 * len(Train_X)), replace=False, p=None)
+    # Train_X.shape = (trip) * 1 * 248 * (4 features)
+    # Train_Y_ori.shape = (trip)
+    # Train_Y.shape = (trip) * (n_classes), (one-hot)
+    # X_unlabeled.shape = (trip) * 1 * 248 * (4 features)
     Train_X = Train_X[random_sample]
     Train_Y_ori = Train_Y_ori[random_sample]
     Train_X, Train_Y, Train_Y_ori, Val_X, Val_Y, Val_Y_ori = train_val_split(Train_X, Train_Y_ori)
     Test_X = one_fold[2]
     Test_Y = one_fold[3]
     Test_Y_ori = one_fold[4]
-    random_sample = np.random.choice(len(X_unlabeled), size=unlabeled_size, replace=False, p=None)
-    # random_sample = np.random.choice(len(X_unlabeled), size=round(prop * len(X_unlabeled)), replace=False, p=None)
+    random_sample = np.random.choice(len(X_unlabeled), size=round(prop * len(X_unlabeled)), replace=False, p=None)
     X_unlabeled = X_unlabeled[random_sample]
     Train_X_Comb = X_unlabeled
 
-    input_size = list(np.shape(Test_X)[1:])
+    input_size = list(np.shape(Test_X)[1:])  # input_size = 1 * 248 * 4
     # Various sets of number of filters for ensemble. If choose one set, no ensemble is implemented.
     # 如果选择了上面那个num_filter_ae_cls_all，就使用了ensemble
     num_filter_ae_cls_all = [[32, 32], [32, 32, 64], [32, 32, 64, 64], [32, 32, 64, 64, 128],
@@ -315,7 +324,7 @@ def training(one_fold, X_unlabeled, seed, prop, num_filter_ae_cls_all, epochs_ae
     class_posterior = []
 
     # This for loop is only for implementing ensemble
-    test_accuracy, f1_macro, f1_weight = 0, 0, 0
+    test_accuracy, precision, recall, f1_macro, f1_weight = 0, 0, 0, 0, 0
     for z in range(len(num_filter_ae_cls_all)):
         # Change the following seed to None only for Ensemble.
         tf.compat.v1.reset_default_graph()  # Used for ensemble
@@ -447,45 +456,66 @@ def training(one_fold, X_unlabeled, seed, prop, num_filter_ae_cls_all, epochs_ae
         ave_class_posterior = sum(class_posterior) / len(class_posterior)
         y_pred = np.argmax(ave_class_posterior, axis=1)
         test_accuracy = accuracy_score(Test_Y_ori, y_pred)
-        # precision = precision_score(Test_Y_ori, y_pred, average='weighted')
-        # recall = recall_score(Test_Y_ori, y_pred, average='weighted')
+        precision = precision_score(Test_Y_ori, y_pred, average='weighted')
+        recall = recall_score(Test_Y_ori, y_pred, average='weighted')
         f1_macro = f1_score(Test_Y_ori, y_pred, average='macro')
         f1_weight = f1_score(Test_Y_ori, y_pred, average='weighted')
         print('Semi-AE+Cls Test Accuracy of the Ensemble: ', test_accuracy)
         print('Confusion Matrix: ', confusion_matrix(Test_Y_ori, y_pred))
 
-    return test_accuracy, f1_macro, f1_weight
+    return test_accuracy, precision, recall, f1_macro, f1_weight
 
 
 def training_all_folds(label_proportions, num_filter):
+    # accurate
     test_accuracy_fold = [[] for _ in range(len(label_proportions))]
     mean_std_acc = [[] for _ in range(len(label_proportions))]
+    # metric
     test_metrics_fold = [[] for _ in range(len(label_proportions))]
     mean_std_metrics = [[] for _ in range(len(label_proportions))]
+    # pr
+    pr_fold = [[] for _ in range(len(label_proportions))]
+    mean_std_pr = [[] for _ in range(len(label_proportions))]
+
     for index, prop in enumerate(label_proportions):
         for i in range(len(kfold_dataset)):
-            test_accuracy, f1_macro, f1_weight = training(kfold_dataset[i], X_unlabeled=X_unlabeled, seed=7, prop=prop,
-                                                          num_filter_ae_cls_all=num_filter, epochs_ae_cls=epoch)
+            # dataset中的每个fold
+            test_accuracy, precision, recall, f1_macro, f1_weight = training(kfold_dataset[i], X_unlabeled=X_unlabeled,
+                                                                             seed=7, prop=prop,
+                                                                             num_filter_ae_cls_all=num_filter,
+                                                                             epochs_ae_cls=epoch)
             test_accuracy_fold[index].append(test_accuracy)
             test_metrics_fold[index].append([f1_macro, f1_weight])
+            pr_fold[index].append(recall / precision)
+
+        # accurate
         accuracy_all = np.array(test_accuracy_fold[index])
         mean = np.mean(accuracy_all)
         std = np.std(accuracy_all)
         mean_std_acc[index] = [mean, std]
+        # metric
         metrics_all = np.array(test_metrics_fold[index])
         mean_metrics = np.mean(metrics_all, axis=0)
         std_metrics = np.std(metrics_all, axis=0)
         mean_std_metrics[index] = [mean_metrics, std_metrics]
+        # pr
+        pr_all = np.array(pr_fold[index])
+        mean_pr = np.mean(pr_all, axis=0)
+        std_pr = np.std(pr_all, axis=0)
+        mean_std_pr[index] = [mean_pr, std_pr]
+
     for index, prop in enumerate(label_proportions):
         print('All Test Accuracy For Semi-AE+Cls with Prop {} are: {}'.format(prop, test_accuracy_fold[index]))
         print('Semi-AE+Cls test accuracy for prop {}: Mean {}, std {}'.format(prop, mean_std_acc[index][0],
                                                                               mean_std_acc[index][1]))
         print('Semi-AE+Cls test metrics for prop {}: Mean {}, std {}'.format(prop, mean_std_metrics[index][0],
                                                                              mean_std_metrics[index][1]))
+        print('Semi-AE+Cls test pr for prop {}: Mean {}, std {}'.format(prop, mean_std_pr[index][0],
+                                                                        mean_std_pr[index][1]))
         print('\n')
     return test_accuracy_fold, test_metrics_fold, mean_std_acc, mean_std_metrics
 
 
 test_accuracy_fold, test_metrics_fold, mean_std_acc, mean_std_metrics = training_all_folds(
-    label_proportions=[0.1, 0.25, 0.5, 0.75], num_filter=[32, 32, 64, 64])
+    label_proportions=[0.1, 0.25, 0.5, 0.75, 1.0], num_filter=num_filter_cls)
 # test_accuracy_fold, test_metrics_fold, mean_std_acc, mean_std_metrics = training_all_folds(label_proportions=[0.25], num_filter=[32, 32, 64, 64])

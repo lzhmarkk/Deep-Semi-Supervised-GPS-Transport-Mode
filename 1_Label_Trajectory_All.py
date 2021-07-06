@@ -153,6 +153,6 @@ try:
 except:
     pass
 with open("./Data/Trajectory_Label.pickle", 'wb') as f:
-    pickle.dump([trajectory_all_user_with_label_Final, trajectory_all_user_wo_label], f)
+    pickle.dump([trajectory_all_user_with_label_Final[:5], trajectory_all_user_wo_label[:5]], f)
 
 print("预处理用时", time.perf_counter() - start_time, 'Seconds')

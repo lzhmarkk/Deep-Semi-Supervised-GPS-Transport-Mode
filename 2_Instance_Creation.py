@@ -23,7 +23,9 @@ filename = './Data/Trajectory_Label.pickle'
 with open(filename, 'rb') as f:
     trajectory_all_user_with_label, trajectory_all_user_wo_label = pickle.load(f)
 
-# mini batch
+print(np.array(trajectory_all_user_with_label).shape, np.array(trajectory_all_user_wo_label).shape)
+
+# 调试用
 # trajectory_all_user_with_label = trajectory_all_user_with_label[:10]
 # trajectory_all_user_wo_label = trajectory_all_user_wo_label[:10]
 
@@ -238,11 +240,11 @@ def compute_trip_motion_features(all_trip_one_user, data_type):
                 trip_motion_features = remove_error_unlabeled(trip_motion_features)
                 all_trip_motion_features_one_user.append(trip_motion_features)
 
-    # 结构：[trip]([feature][value...], mode) or [trip][feature][value...]
+    # 结构：[trip][([feature][value...], mode)] or [trip][feature][value...]
     return all_trip_motion_features_one_user
 
 
-# 结构：[user][trip]([feature][value...], mode)
+# 结构：[user][trip][([feature][value...], mode)]
 trip_motion_all_user_with_label = [compute_trip_motion_features(user, data_type='labeled') for user
                                    in trip_all_user_with_label]
 # 结构：[user][trip][feature][value...]
@@ -275,7 +277,7 @@ def trip_check_thresholds(trip_motion_all_user, min_threshold, min_distance, min
 
 
 # Apply the threshold values to each GPS segment
-# 结构：[user][trip]([feature][value...], mode)
+# 结构：[user][trip][([feature][value...], mode)]
 trip_motion_all_user_with_label = trip_check_thresholds(trip_motion_all_user_with_label, min_threshold=min_threshold,
                                                         min_distance=min_distance, min_time=min_time,
                                                         data_type='labeled')
@@ -307,7 +309,7 @@ for user in trip_motion_all_user_with_label:
     test_trip_motion_all_user_with_label.extend(user[round(0.8*length):])
 '''
 # Put trips of all user together.
-# 结构：[trip]([feature][value...], mode)
+# 结构：[trip][([feature][value...], mode)]
 trip_motion_all_user_with_label = [trip for user in trip_motion_all_user_with_label for trip in user]
 random.shuffle(trip_motion_all_user_with_label)
 # 结构：[trip][feature][value...]
