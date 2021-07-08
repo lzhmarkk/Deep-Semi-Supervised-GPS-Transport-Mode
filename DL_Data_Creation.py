@@ -1,21 +1,8 @@
 # 将原始GPS轨迹转换为多通道GPS矩阵表示
+# Apply some of data preprocessing step in the paper and prepare the final input layer for deep learning
 import numpy as np
 import pickle
 import tensorflow.keras as keras
-
-# Import the final output from Instance_creation file, which is the filtered trips for all users.
-
-filename = './Data/trips_motion_features_NotFixedLength_woOutliers.pickle'
-# 结构：[trip][([feature][value...], mode)]
-# 结构：[trip][feature][value...]
-with open(filename, 'rb') as f:
-    trip_motion_all_user_with_label, trip_motion_all_user_wo_label = pickle.load(f)
-
-# 调试用
-# trip_motion_all_user_with_label = trip_motion_all_user_with_label[:1000]
-# trip_motion_all_user_wo_label = trip_motion_all_user_wo_label[:1000]
-
-# Apply some of data preprocessing step in the paper and prepare the final input layer for deep learning
 
 # Settings
 # AccLimit = {0: 3, 1: 3, 2: 2, 3: 10, 4: 3}
@@ -28,6 +15,8 @@ new_channel = 4
 # new_channel = 4
 min_percentile = 0
 max_percentile = 100
+# Import the final output from Instance_creation file, which is the filtered trips for all users.
+filename = './Data/trips_motion_features_NotFixedLength_woOutliers.pickle'
 
 
 def take_speed_percentile(trip, min_percentile, max_percentile):
@@ -101,21 +90,6 @@ def trip_to_fixed_length(trip_motion_all_user, min_threshold, max_threshold, min
         return np.array(total_input)
 
 
-# Max_threshold=200: 200 is the rounded median size of all trips (i.e., GPS trajectory) after removing errors and
-# outliers including: 1) max speed and acceleration, (2) trip length less than 10
-
-# X_labeled结构：[trip][feature][value...]，其中value的长度被固定为max_threshold=248
-# Y_labeled_ori结构：[trip]，值为常量mode
-X_labeled, Y_labeled_ori = trip_to_fixed_length(trip_motion_all_user_with_label, min_threshold=min_threshold,
-                                                max_threshold=max_threshold, min_distance=min_distance,
-                                                min_time=min_time,
-                                                data_type='labeled')
-# X_unlabeled结构：[trip][feature][value...]，其中value的长度被固定为max_threshold=248
-X_unlabeled = trip_to_fixed_length(trip_motion_all_user_wo_label, min_threshold=min_threshold,
-                                   max_threshold=max_threshold, min_distance=min_distance, min_time=min_time,
-                                   data_type='unlabeled')
-
-
 def change_to_new_channel(input):
     # input1结构：[trip][feature][value...]，其中feature为relative_distance, delta_time
     input1 = input[:, 0:1, :]
@@ -136,11 +110,6 @@ def change_to_new_channel(input):
     # total_input_new结构：[trip][1][max_threshold][4 feature]
     # 其中feature为relative_distance, delta_time, speed, acc
     return total_input_new
-
-
-# shape = (trip) * 1 * max_threshold * (4 features)
-X_labeled = change_to_new_channel(X_labeled)
-X_unlabeled = change_to_new_channel(X_unlabeled)
 
 
 def min_max_scaler(input, min, max):
@@ -184,20 +153,49 @@ def k_fold_stratified(X_labeled, Y_labeled_ori, fold=5):
     return kfold_dataset
 
 
-# kfold_dataset.shape = (fold) * (type) * (value)
-# 其中type = [Train_X, Train_Y_ori, Test_X, Test_Y, Test_Y_ori]
-# value.shape = (trip) * 1 * max_threshold * (4 features) or (scale)
-kfold_dataset = k_fold_stratified(X_labeled, Y_labeled_ori, fold=5)
+if __name__ == '__main__':
+    print("running DL_Data_Creation")
+    # 结构：[trip][([feature][value...], mode)]
+    # 结构：[trip][feature][value...]
+    with open(filename, 'rb') as f:
+        trip_motion_all_user_with_label, trip_motion_all_user_wo_label = pickle.load(f)
 
-X_unlabeled, _ = min_max_scaler(X_unlabeled, 0, 1)
+    # 调试用
+    # trip_motion_all_user_with_label = trip_motion_all_user_with_label[:1000]
+    # trip_motion_all_user_wo_label = trip_motion_all_user_wo_label[:1000]
 
-# Test for being stratified
-a = len(np.where(kfold_dataset[4][1] == 0)[0]) / len(kfold_dataset[4][1])
+    # Max_threshold=200: 200 is the rounded median size of all trips (i.e., GPS trajectory) after removing errors and
+    # outliers including: 1) max speed and acceleration, (2) trip length less than 10
 
-b = len(np.where(kfold_dataset[4][4] == 0)[0]) / len(kfold_dataset[4][4])
+    # X_labeled结构：[trip][feature][value...]，其中value的长度被固定为max_threshold=248
+    # Y_labeled_ori结构：[trip]，值为常量mode
+    X_labeled, Y_labeled_ori = trip_to_fixed_length(trip_motion_all_user_with_label, min_threshold=min_threshold,
+                                                    max_threshold=max_threshold, min_distance=min_distance,
+                                                    min_time=min_time,
+                                                    data_type='labeled')
+    # X_unlabeled结构：[trip][feature][value...]，其中value的长度被固定为max_threshold=248
+    X_unlabeled = trip_to_fixed_length(trip_motion_all_user_wo_label, min_threshold=min_threshold,
+                                       max_threshold=max_threshold, min_distance=min_distance, min_time=min_time,
+                                       data_type='unlabeled')
 
-# kfold_dataset.shape = (fold) * (type) * (trip) * 1 * 248 * (4 features)
-# 其中type = [Train_X, Train_Y_ori, Test_X, Test_Y, Test_Y_ori]
-# X_unlabeled.shape = (trip) * 1 * 248 * (4 features)
-with open('./Data/data_for_DL_kfold_dataset_RL.pickle', 'wb') as f:
-    pickle.dump([kfold_dataset, X_unlabeled], f)
+    # shape = (trip) * 1 * max_threshold * (4 features)
+    X_labeled = change_to_new_channel(X_labeled)
+    X_unlabeled = change_to_new_channel(X_unlabeled)
+
+    # kfold_dataset.shape = (fold) * (type) * (value)
+    # 其中type = [Train_X, Train_Y_ori, Test_X, Test_Y, Test_Y_ori]
+    # value.shape = (trip) * 1 * max_threshold * (4 features) or (scale)
+    kfold_dataset = k_fold_stratified(X_labeled, Y_labeled_ori, fold=5)
+
+    X_unlabeled, _ = min_max_scaler(X_unlabeled, 0, 1)
+
+    # Test for being stratified
+    a = len(np.where(kfold_dataset[4][1] == 0)[0]) / len(kfold_dataset[4][1])
+
+    b = len(np.where(kfold_dataset[4][4] == 0)[0]) / len(kfold_dataset[4][4])
+
+    # kfold_dataset.shape = (fold) * (type) * (trip) * 1 * 248 * (4 features)
+    # 其中type = [Train_X, Train_Y_ori, Test_X, Test_Y, Test_Y_ori]
+    # X_unlabeled.shape = (trip) * 1 * 248 * (4 features)
+    with open('./Data/data_for_DL_kfold_dataset_RL.pickle', 'wb') as f:
+        pickle.dump([kfold_dataset, X_unlabeled], f)
